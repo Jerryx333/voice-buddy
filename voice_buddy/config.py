@@ -23,6 +23,11 @@ DEFAULT_CONFIG = {
     # Cached path of the python interpreter that was last granted Accessibility.
     # Used by hotkey-doctor to detect drift on venv recreate / Python upgrade.
     "last_trusted_executable": None,
+    "llm": {
+        "api_base": "",
+        "api_key": "",
+        "model": "",
+    },
 }
 
 _REPO_ROOT = Path(__file__).parent.parent
@@ -56,6 +61,7 @@ def load_user_config() -> dict:
         # Fill missing fields from defaults
         merged = {**DEFAULT_CONFIG, **user_config}
         merged["events"] = {**DEFAULT_CONFIG["events"], **user_config.get("events", {})}
+        merged["llm"] = {**DEFAULT_CONFIG["llm"], **user_config.get("llm", {})}
         return merged
     else:
         # First run: create defaults, applying plugin userConfig env vars if set

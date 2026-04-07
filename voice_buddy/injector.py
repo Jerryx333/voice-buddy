@@ -100,19 +100,16 @@ def _should_trigger(message: str) -> bool:
 
 
 def process_stop_event(data: dict, user_config: dict = None) -> None:
-    """Handle Stop event: block via exit code 2 to trigger subagent.
+    """Handle Stop event: generate voice response via LLM or subagent fallback.
 
-    Exit code 2 prevents Claude from stopping and feeds stderr back to Claude.
-    We output JSON with decision=block and style-aware additionalContext so
-    Claude knows to call the voice-buddy subagent.
+    If llm config is set, calls OpenAI-compatible API directly and plays TTS.
+    Otherwise falls back to exit code 2 (subagent injection).
     """
     if user_config is None:
         from voice_buddy.config import load_user_config
         user_config = load_user_config()
 
     # Guard: don't re-trigger if we're already inside a stop-hook retry.
-    # Claude Code sets stop_hook_active=true on the second invocation to
-    # prevent infinite blocking loops.
     if data.get("stop_hook_active"):
         return
 
@@ -130,28 +127,67 @@ def process_stop_event(data: dict, user_config: dict = None) -> None:
     if not _should_trigger(message):
         return
 
-    # Build style-aware context for stderr
     style_id = user_config.get("style", "cute-girl")
     nickname = user_config.get("nickname", "Master")
     persona_override = user_config.get("persona_override")
+    llm_config = user_config.get("llm", {})
 
+    # Path A: direct LLM call (when configured)
+    if llm_config.get("api_base") and llm_config.get("model"):
+        _handle_llm_path(message, style_id, nickname, persona_override, llm_config)
+        return
+
+    # Path B: fallback to subagent injection via exit code 2
+    _handle_subagent_path(message, style_id, nickname, persona_override, user_config)
+
+
+def _handle_llm_path(message, style_id, nickname, persona_override, llm_config):
+    """Call external LLM to generate text, then TTS."""
+    from voice_buddy.llm import generate_response
+    from voice_buddy.styles import load_style
+    from voice_buddy.tts import synthesize_to_file
+    from voice_buddy.player import play_audio
+
+    summary = message[:300] if len(message) > 300 else message
+    text = generate_response(
+        task_summary=summary,
+        style=style_id,
+        nickname=nickname,
+        llm_config=llm_config,
+        persona_override=persona_override,
+    )
+    if not text:
+        return
+
+    style = load_style(style_id)
+    if style:
+        tts = style["tts"]
+        voice = tts.get("voice", "zh-CN-XiaoyiNeural")
+        rate = tts.get("rate", "+0%")
+        pitch = tts.get("pitch", "+0Hz")
+    else:
+        voice, rate, pitch = "zh-CN-XiaoyiNeural", "+0%", "+0Hz"
+
+    audio_path = synthesize_to_file(text, voice=voice, rate=rate, pitch=pitch)
+    if audio_path:
+        play_audio(audio_path)
+
+
+def _handle_subagent_path(message, style_id, nickname, persona_override, user_config):
+    """Original path: block via exit code 2 to trigger subagent."""
     from voice_buddy.styles import load_style
     from voice_buddy.config import get_repo_root
+
     style = load_style(style_id)
     agent_name = style["agent"] if style else "voice-buddy-cute-girl"
 
-    # Resolve actual plugin root path at runtime (CLAUDE_PLUGIN_ROOT may not
-    # be available in agent's Bash env, so we bake in the absolute path).
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(get_repo_root()))
-
     summary = message[:150] if len(message) > 150 else message
 
     persona_line = ""
     if persona_override:
         persona_line = f"Persona override: {persona_override}\n"
 
-    # Exit code 2: Claude Code blocks the stop and feeds stderr back to Claude.
-    # Instruct Claude to call the style-specific agent, then TTS.
     print(
         f"REQUIRED ACTION — Voice Buddy ({style_id}):\n"
         f"Nickname: {nickname}\n"

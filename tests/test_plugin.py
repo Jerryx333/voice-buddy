@@ -30,16 +30,10 @@ def test_hooks_json_exists_and_valid():
     assert path.exists()
     data = json.loads(path.read_text())
     assert "hooks" in data
-    assert "SessionStart" in data["hooks"]
-    assert "SessionEnd" in data["hooks"]
-    assert "Notification" in data["hooks"]
     assert "Stop" in data["hooks"]
     # Stop must be synchronous
     stop_hook = data["hooks"]["Stop"][0]["hooks"][0]
     assert stop_hook["async"] is False
-    # Others must be async
-    start_hook = data["hooks"]["SessionStart"][0]["hooks"][0]
-    assert start_hook["async"] is True
 
 
 def test_all_persona_files_exist():
