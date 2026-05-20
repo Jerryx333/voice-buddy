@@ -1,12 +1,14 @@
 {
   "name": "voice-buddy-marketplace",
-  "owner": { "name": "luyao618" },
+  "owner": {
+    "name": "luyao618"
+  },
   "plugins": [
     {
       "name": "voice-buddy",
       "source": {
         "source": "github",
-        "repo": "luyao618/voice-buddy"
+        "repo": "Sean529/voice-buddy"
       },
       "description": "CC - personality-driven voice companion for Claude Code"
     }
